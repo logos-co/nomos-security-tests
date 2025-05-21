@@ -73,8 +73,8 @@ mod test {
         while let Some(expected_message) = expected_messages.front() {
             loop {
                 if let SwarmEvent::Behaviour(ReplicationEvent::IncomingMessage {
-                                                 message, ..
-                                             }) = swarm.select_next_some().await
+                    message, ..
+                }) = swarm.select_next_some().await
                 {
                     if &message == expected_message {
                         break;
@@ -192,8 +192,8 @@ mod test {
                 Duration::from_secs(10),
                 futures::future::join3(done_1_rx.recv(), done_2_rx.recv(), done_3_rx.recv()),
             )
-                .await
-                .is_ok(),
+            .await
+            .is_ok(),
             "Test timed out"
         );
     }
@@ -224,9 +224,9 @@ mod test {
             swarm_1
                 .filter_map(|event| async {
                     if let SwarmEvent::Behaviour(ReplicationEvent::IncomingMessage {
-                                                     message,
-                                                     ..
-                                                 }) = event
+                        message,
+                        ..
+                    }) = event
                     {
                         Some(message)
                     } else {
@@ -474,8 +474,8 @@ mod test {
             let mut all_messages_tampered = true;
             loop {
                 if let SwarmEvent::Behaviour(ReplicationEvent::IncomingMessage {
-                                                 message, ..
-                                             }) = swarm_1.select_next_some().await
+                    message, ..
+                }) = swarm_1.select_next_some().await
                 {
                     received_messages += 1;
                     // Check all messages were tampered
