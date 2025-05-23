@@ -1,5 +1,5 @@
 pub mod ledger;
-pub mod state;
+mod state;
 
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -8,7 +8,6 @@ use std::{
 
 use blake2::{Blake2b, Digest as _};
 use multiaddr::Multiaddr;
-use state::ProviderState;
 
 pub type StakeThreshold = u64;
 pub type BlockNumber = u64;
@@ -19,11 +18,10 @@ pub struct MinStake {
 }
 
 #[derive(Clone, Debug)]
-pub struct ServiceParameters<ContractAddress: Clone> {
+pub struct ServiceParameters {
     pub lock_period: u64,
     pub inactivity_period: u64,
     pub retention_period: u64,
-    pub activity_contract: ContractAddress,
     pub timestamp: BlockNumber,
 }
 
@@ -44,7 +42,6 @@ pub enum ServiceType {
     BlendNetwork,
     DataAvailability,
     ExecutorNetwork,
-    GenericRestaking,
 }
 
 pub type Nonce = [u8; 16];
@@ -84,6 +81,13 @@ impl ProviderInfo {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ProviderState {
+    Active,
+    Inactive,
+    Withdrawn,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Declaration {
     pub declaration_id: DeclarationId,
@@ -115,8 +119,8 @@ pub struct DeclarationUpdate {
     pub locators: Vec<Locator>,
 }
 
-impl<Proof> From<&DeclarationMessage<Proof>> for DeclarationUpdate {
-    fn from(message: &DeclarationMessage<Proof>) -> Self {
+impl From<&DeclarationMessage> for DeclarationUpdate {
+    fn from(message: &DeclarationMessage) -> Self {
         Self {
             declaration_id: message.declaration_id(),
             provider_id: message.provider_id,
@@ -127,14 +131,13 @@ impl<Proof> From<&DeclarationMessage<Proof>> for DeclarationUpdate {
 }
 
 #[derive(Clone)]
-pub struct DeclarationMessage<Proof> {
+pub struct DeclarationMessage {
     pub service_type: ServiceType,
     pub locators: Vec<Locator>,
-    pub proof_of_funds: Proof,
     pub provider_id: ProviderId,
 }
 
-impl<Proof> DeclarationMessage<Proof> {
+impl DeclarationMessage {
     fn declaration_id(&self) -> DeclarationId {
         let mut hasher = Blake2b::new();
         for locator in &self.locators {
@@ -185,13 +188,13 @@ pub struct Event {
     pub timestamp: BlockNumber,
 }
 
-pub enum SdpMessage<Metadata, Proof> {
-    Declare(DeclarationMessage<Proof>),
+pub enum SdpMessage<Metadata> {
+    Declare(DeclarationMessage),
     Activity(ActiveMessage<Metadata>),
     Withdraw(WithdrawMessage),
 }
 
-impl<Metadata, Proof> SdpMessage<Metadata, Proof> {
+impl<Metadata> SdpMessage<Metadata> {
     #[must_use]
     pub const fn provider_id(&self) -> ProviderId {
         match self {

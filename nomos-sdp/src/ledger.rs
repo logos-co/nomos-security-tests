@@ -1,17 +1,12 @@
-use std::{
-    collections::{HashMap, hash_map::Entry},
-    error::Error,
-    fmt::Debug,
-    marker::PhantomData,
-};
+use std::{collections::HashMap, error::Error, fmt::Debug, marker::PhantomData};
 
 use async_trait::async_trait;
 
 use crate::{
-    ActiveMessage, ActivityId, BlockNumber, Declaration, DeclarationId, DeclarationMessage,
-    DeclarationUpdate, EventType, Nonce, ProviderId, ProviderInfo, SdpMessage, ServiceParameters,
-    ServiceType, WithdrawMessage,
-    state::{ProviderState, ProviderStateError},
+    ActiveMessage, BlockNumber, Declaration, DeclarationId, DeclarationMessage, DeclarationUpdate,
+    EventType, Nonce, ProviderId, ProviderInfo, SdpMessage, ServiceParameters, ServiceType,
+    WithdrawMessage,
+    state::{ProviderStateError, TransientProviderState},
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -61,32 +56,10 @@ pub enum ServicesRepositoryError {
 
 #[async_trait]
 pub trait ServicesRepository {
-    type ContractAddress: Clone;
-
     async fn get_parameters(
         &self,
         service_type: ServiceType,
-    ) -> Result<ServiceParameters<Self::ContractAddress>, ServicesRepositoryError>;
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum ActivityContractError<ContractAddress> {
-    #[error("Activity contract not found: {0:?}")]
-    NotFound(ContractAddress),
-    #[error(transparent)]
-    Other(Box<dyn Error + Send + Sync>),
-}
-
-#[async_trait]
-pub trait ActivityContract {
-    type ContractAddress: Debug;
-    type Metadata;
-
-    async fn mark_active(
-        &self,
-        contract_address: Self::ContractAddress,
-        active_message: ActiveMessage<Self::Metadata>,
-    ) -> Result<(), ActivityContractError<Self::ContractAddress>>;
+    ) -> Result<ServiceParameters, ServicesRepositoryError>;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -113,17 +86,13 @@ pub trait StakesVerifier {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum SdpLedgerError<ContractAddress: Debug> {
+pub enum SdpLedgerError {
     #[error(transparent)]
     ProviderState(#[from] ProviderStateError),
     #[error(transparent)]
     DeclarationsRepository(#[from] DeclarationsRepositoryError),
     #[error(transparent)]
-    ActivityContract(#[from] ActivityContractError<ContractAddress>),
-    #[error(transparent)]
     ServicesRepository(#[from] ServicesRepositoryError),
-    #[error(transparent)]
-    StakesVerifier(#[from] StakesVerifierError),
     #[error("Provider service is already declared in declaration")]
     DuplicateServiceDeclaration,
     #[error("Provider does not provide {0:?} declaration")]
@@ -136,48 +105,30 @@ pub enum SdpLedgerError<ContractAddress: Debug> {
     Other(Box<dyn Error + Send + Sync>),
 }
 
-pub struct SdpLedger<Declarations, Activity, Services, Stakes, Proof, Metadata, ContractAddress>
+pub struct SdpLedger<Declarations, Services, Metadata>
 where
     Declarations: DeclarationsRepository,
-    Activity: ActivityContract,
     Services: ServicesRepository,
 {
     declaration_repo: Declarations,
-    activity_contract: Activity,
     services_repo: Services,
-    stake_verifier: Stakes,
     pending_providers: HashMap<BlockNumber, HashMap<ProviderId, ProviderInfo>>,
     pending_declarations: HashMap<BlockNumber, HashMap<ProviderId, DeclarationUpdate>>,
-    pending_activity: HashMap<ProviderId, ActivityId>,
-    _phantom: PhantomData<(Proof, Metadata, ContractAddress)>,
+    _phantom: PhantomData<Metadata>,
 }
 
-impl<Declarations, Activity, Services, Stakes, Proof, Metadata, ContractAddress>
-    SdpLedger<Declarations, Activity, Services, Stakes, Proof, Metadata, ContractAddress>
+impl<Declarations, Services, Metadata> SdpLedger<Declarations, Services, Metadata>
 where
     Declarations: DeclarationsRepository + Send + Sync,
-    Activity:
-        ActivityContract<Metadata = Metadata, ContractAddress = ContractAddress> + Send + Sync,
-    Services: ServicesRepository<ContractAddress = ContractAddress> + Send + Sync,
-    Stakes: StakesVerifier<Proof = Proof> + Send + Sync,
-    ContractAddress: Debug + Send + Sync + Clone,
-    Proof: Send + Sync,
+    Services: ServicesRepository + Send + Sync,
     Metadata: Send + Sync,
 {
-    pub fn new(
-        declaration_repo: Declarations,
-        activity_contract: Activity,
-        services_repo: Services,
-        stake_verifier: Stakes,
-    ) -> Self {
+    pub fn new(declaration_repo: Declarations, services_repo: Services) -> Self {
         Self {
             declaration_repo,
-            activity_contract,
             services_repo,
-            stake_verifier,
             pending_providers: HashMap::new(),
             pending_declarations: HashMap::new(),
-            pending_activity: HashMap::new(),
             _phantom: PhantomData,
         }
     }
@@ -185,9 +136,9 @@ where
     async fn process_declare(
         &mut self,
         block_number: BlockNumber,
-        current_state: ProviderState,
-        declaration_message: DeclarationMessage<Proof>,
-    ) -> Result<ProviderState, SdpLedgerError<ContractAddress>> {
+        current_state: TransientProviderState,
+        declaration_message: DeclarationMessage,
+    ) -> Result<TransientProviderState, SdpLedgerError> {
         // Check if state can transition before inserting declaration into pending list.
         let pending_state = current_state.try_into_active(block_number, EventType::Declaration)?;
         let provider_id = declaration_message.provider_id;
@@ -218,13 +169,6 @@ where
         }
 
         let declaration_update = DeclarationUpdate::from(&declaration_message);
-        let proof_of_funds = declaration_message.proof_of_funds;
-
-        // Provider stake needs to be checked by verifying proof.
-        self.stake_verifier
-            .verify(provider_id, proof_of_funds)
-            .await?;
-
         let entry = self.pending_declarations.entry(block_number).or_default();
         entry.insert(provider_id, declaration_update);
 
@@ -232,12 +176,11 @@ where
     }
 
     async fn process_active(
-        &mut self,
+        &self,
         block_number: BlockNumber,
-        current_state: ProviderState,
+        current_state: TransientProviderState,
         active_message: ActiveMessage<Metadata>,
-        service_params: ServiceParameters<ContractAddress>,
-    ) -> Result<ProviderState, SdpLedgerError<ContractAddress>> {
+    ) -> Result<TransientProviderState, SdpLedgerError> {
         // Check if state can transition before marking as active.
         let pending_state = current_state.try_into_active(block_number, EventType::Activity)?;
         let provider_id = active_message.provider_id;
@@ -257,27 +200,16 @@ where
             }
         }
 
-        // Activity can be recorded, but state never transition, we need to allow state
-        // transition if `provider_info` got marked active, but didn't transition state
-        // for some reason.
-        if let Entry::Vacant(entry) = self.pending_activity.entry(provider_id) {
-            let activity_id = active_message.activity_id();
-            self.activity_contract
-                .mark_active(service_params.activity_contract, active_message)
-                .await?;
-            entry.insert(activity_id);
-        }
-
         Ok(pending_state)
     }
 
     async fn process_withdraw(
         &self,
         block_number: BlockNumber,
-        current_state: ProviderState,
+        current_state: TransientProviderState,
         withdraw_message: WithdrawMessage,
-        service_params: ServiceParameters<ContractAddress>,
-    ) -> Result<ProviderState, SdpLedgerError<ContractAddress>> {
+        service_params: ServiceParameters,
+    ) -> Result<TransientProviderState, SdpLedgerError> {
         let pending_state = current_state.try_into_withdrawn(
             block_number,
             EventType::Withdrawal,
@@ -306,8 +238,8 @@ where
     pub async fn process_sdp_message(
         &mut self,
         block_number: BlockNumber,
-        message: SdpMessage<Metadata, Proof>,
-    ) -> Result<(), SdpLedgerError<ContractAddress>> {
+        message: SdpMessage<Metadata>,
+    ) -> Result<(), SdpLedgerError> {
         let provider_id = message.provider_id();
         let declaration_id = message.declaration_id();
         let service_type = message.service_type();
@@ -322,16 +254,22 @@ where
         let maybe_provider_info = self.declaration_repo.get_provider_info(provider_id).await;
 
         let current_state = if let Some(provider_info) = maybe_pending_state {
-            ProviderState::try_from_info(block_number, provider_info, &service_params)?
+            TransientProviderState::try_from_info(block_number, provider_info, &service_params)?
         } else {
             match maybe_provider_info {
-                Ok(provider_info) => {
-                    ProviderState::try_from_info(block_number, &provider_info, &service_params)?
-                }
+                Ok(provider_info) => TransientProviderState::try_from_info(
+                    block_number,
+                    &provider_info,
+                    &service_params,
+                )?,
                 Err(DeclarationsRepositoryError::ProviderNotFound(_)) => {
                     let provider_info =
                         ProviderInfo::new(block_number, provider_id, declaration_id);
-                    ProviderState::try_from_info(block_number, &provider_info, &service_params)?
+                    TransientProviderState::try_from_info(
+                        block_number,
+                        &provider_info,
+                        &service_params,
+                    )?
                 }
                 Err(err) => return Err(SdpLedgerError::DeclarationsRepository(err)),
             }
@@ -347,7 +285,7 @@ where
                     .await?
             }
             SdpMessage::Activity(active_message) => {
-                self.process_active(block_number, current_state, active_message, service_params)
+                self.process_active(block_number, current_state, active_message)
                     .await?
             }
             SdpMessage::Withdraw(withdraw_message) => {
@@ -373,7 +311,7 @@ where
         &mut self,
         block_number: BlockNumber,
         provider_info: &ProviderInfo,
-    ) -> Result<(), SdpLedgerError<ContractAddress>> {
+    ) -> Result<(), SdpLedgerError> {
         let provider_id = provider_info.provider_id;
 
         if let Err(err) = self
@@ -406,20 +344,12 @@ where
         Ok(())
     }
 
-    pub async fn mark_in_block(
-        &mut self,
-        block_number: BlockNumber,
-    ) -> Result<(), SdpLedgerError<ContractAddress>> {
+    pub async fn mark_in_block(&mut self, block_number: BlockNumber) -> Result<(), SdpLedgerError> {
         let Some(updates) = self.pending_providers.remove(&block_number) else {
             return Ok(());
         };
 
         for info in updates.values() {
-            let id = info.provider_id;
-            // Activity contract is expected to be marked in block by entity that manages
-            // activity.
-            self.pending_activity.remove(&id);
-
             if let Err(err) = self.mark_declaration_in_block(block_number, info).await {
                 tracing::error!("Provider information couldn't be updated: {err}");
             }
@@ -430,11 +360,7 @@ where
 
     pub fn discard_block(&mut self, block_number: BlockNumber) {
         self.pending_declarations.remove(&block_number);
-        if let Some(updates) = self.pending_providers.remove(&block_number) {
-            for ProviderInfo { provider_id, .. } in updates.values() {
-                self.pending_activity.remove(provider_id);
-            }
-        }
+        self.pending_providers.remove(&block_number);
     }
 }
 
@@ -452,22 +378,13 @@ mod tests {
     use super::*;
     use crate::*;
 
-    type MockContractAddress = [u8; 32];
     type MockMetadata = [u8; 32];
-    type MockProof = [u8; 32];
-    type MockSdpLedger = SdpLedger<
-        MockDeclarationsRepository,
-        MockActivityContract,
-        MockServicesRepository,
-        MockStakesVerifier,
-        MockProof,
-        MockMetadata,
-        MockContractAddress,
-    >;
+    type MockSdpLedger =
+        SdpLedger<MockDeclarationsRepository, MockServicesRepository, MockMetadata>;
 
     #[derive(Default)]
     pub struct MockBlock {
-        pub messages: Vec<(SdpMessage<MockMetadata, MockProof>, bool)>,
+        pub messages: Vec<(SdpMessage<MockMetadata>, bool)>,
     }
 
     impl MockBlock {
@@ -482,7 +399,6 @@ mod tests {
                 SdpMessage::Declare(DeclarationMessage {
                     service_type,
                     locators,
-                    proof_of_funds: [0u8; 32],
                     provider_id,
                 }),
                 should_pass,
@@ -661,53 +577,16 @@ mod tests {
     }
 
     #[derive(Default, Clone)]
-    struct MockActivityContract {
-        activity_records: Arc<Mutex<Vec<ActiveMessage<MockContractAddress>>>>,
-    }
-
-    #[async_trait]
-    impl ActivityContract for MockActivityContract {
-        type ContractAddress = MockContractAddress;
-        type Metadata = MockMetadata;
-
-        async fn mark_active(
-            &self,
-            _activity_contract: Self::ContractAddress,
-            activity_message: ActiveMessage<Self::ContractAddress>,
-        ) -> Result<(), ActivityContractError<Self::ContractAddress>> {
-            self.activity_records.lock().unwrap().push(activity_message);
-            Ok(())
-        }
-    }
-
-    struct MockStakesVerifier;
-
-    #[async_trait]
-    impl StakesVerifier for MockStakesVerifier {
-        type Proof = MockProof;
-
-        async fn verify(
-            &self,
-            _provider_id: ProviderId,
-            _proof: Self::Proof,
-        ) -> Result<(), StakesVerifierError> {
-            Ok(())
-        }
-    }
-
-    #[derive(Default, Clone)]
     struct MockServicesRepository {
-        service_params: Arc<Mutex<HashMap<ServiceType, ServiceParameters<MockContractAddress>>>>,
+        service_params: Arc<Mutex<HashMap<ServiceType, ServiceParameters>>>,
     }
 
     #[async_trait]
     impl ServicesRepository for MockServicesRepository {
-        type ContractAddress = MockContractAddress;
-
         async fn get_parameters(
             &self,
             service_type: ServiceType,
-        ) -> Result<ServiceParameters<Self::ContractAddress>, ServicesRepositoryError> {
+        ) -> Result<ServiceParameters, ServicesRepositoryError> {
             self.service_params
                 .lock()
                 .unwrap()
@@ -717,12 +596,11 @@ mod tests {
         }
     }
 
-    const fn default_service_params() -> ServiceParameters<MockContractAddress> {
+    const fn default_service_params() -> ServiceParameters {
         ServiceParameters {
             lock_period: 10,
             inactivity_period: 20,
             retention_period: 30,
-            activity_contract: [0u8; 32],
             timestamp: 0,
         }
     }
@@ -730,13 +608,10 @@ mod tests {
     fn setup_ledger() -> (
         MockSdpLedger,
         MockDeclarationsRepository,
-        MockActivityContract,
         MockServicesRepository,
     ) {
         let declaration_repo = MockDeclarationsRepository::default();
-        let activity_contract = MockActivityContract::default();
         let service_repo = MockServicesRepository::default();
-        let stake_verifier = MockStakesVerifier;
 
         {
             let mut params = service_repo.service_params.lock().unwrap();
@@ -746,26 +621,22 @@ mod tests {
 
         let ledger = SdpLedger {
             declaration_repo: declaration_repo.clone(),
-            activity_contract: activity_contract.clone(),
             services_repo: service_repo.clone(),
-            stake_verifier,
             pending_providers: HashMap::new(),
             pending_declarations: HashMap::new(),
-            pending_activity: HashMap::new(),
             _phantom: PhantomData,
         };
 
-        (ledger, declaration_repo, activity_contract, service_repo)
+        (ledger, declaration_repo, service_repo)
     }
 
     #[tokio::test]
     async fn test_process_declare_message() {
-        let (mut ledger, _, _, _) = setup_ledger();
+        let (mut ledger, _, _) = setup_ledger();
         let provider_id = ProviderId([0u8; 32]);
         let declaration_message = DeclarationMessage {
             service_type: ServiceType::BlendNetwork,
             locators: vec![],
-            proof_of_funds: [0u8; 32],
             provider_id,
         };
 
@@ -785,7 +656,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_activity_message() {
-        let (mut ledger, _, activity_contract, _) = setup_ledger();
+        let (mut ledger, _, _) = setup_ledger();
         let provider_id = ProviderId([0u8; 32]);
         let declaration_id = DeclarationId([1u8; 32]);
 
@@ -805,16 +676,11 @@ mod tests {
 
         assert_eq!(ledger.pending_providers.len(), 1);
         assert!(ledger.pending_providers.contains_key(&100));
-
-        let activity_records = activity_contract.activity_records.lock().unwrap();
-        assert_eq!(activity_records.len(), 1);
-        assert_eq!(activity_records[0].provider_id, provider_id);
-        drop(activity_records); // clippy strict >:)
     }
 
     #[tokio::test]
     async fn test_process_withdraw_message() {
-        let (mut ledger, declaration_repo, activity_contract, _) = setup_ledger();
+        let (mut ledger, declaration_repo, _) = setup_ledger();
         let provider_id = ProviderId([0u8; 32]);
         let declaration_id = DeclarationId([1u8; 32]);
 
@@ -841,21 +707,15 @@ mod tests {
 
         assert_eq!(ledger.pending_providers.len(), 1);
         assert!(ledger.pending_providers.contains_key(&100));
-
-        // Withdrawing doesn't make the provider active.
-        let activity_records = activity_contract.activity_records.lock().unwrap();
-        assert_eq!(activity_records.len(), 0);
-        drop(activity_records);
     }
 
     #[tokio::test]
     async fn test_duplicate_declaration() {
-        let (mut ledger, _, _, _) = setup_ledger();
+        let (mut ledger, _, _) = setup_ledger();
         let provider_id = ProviderId([0u8; 32]);
         let declaration_message = DeclarationMessage {
             service_type: ServiceType::BlendNetwork,
             locators: vec![],
-            proof_of_funds: [0u8; 32],
             provider_id,
         };
 
@@ -872,7 +732,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_valid_blocks() {
-        let (mut ledger, declarations_repo, _, _) = setup_ledger();
+        let (mut ledger, declarations_repo, _) = setup_ledger();
         let pid = ProviderId([0; 32]);
         let locators = vec![Locator {
             addr: multiaddr!(Ip4([1, 2, 3, 4]), Udp(5678u16)),
@@ -949,7 +809,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_multiple_providers_blocks() {
-        let (mut ledger, declarations_repo, _, _) = setup_ledger();
+        let (mut ledger, declarations_repo, _) = setup_ledger();
         let pid1 = ProviderId([0; 32]);
         let pid2 = ProviderId([1; 32]);
         let locators = vec![Locator {
