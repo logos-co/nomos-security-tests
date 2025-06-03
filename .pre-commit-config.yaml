@@ -3,10 +3,14 @@ repos:
     rev: v1.0
     hooks:
       - id: fmt
+        # We're running `fmt` with `--all` and `pass_filenames: false` to format the entire workspace at once.
+        # Otherwise, `pre-commit` passes staged files one by one, which can lead to inconsistent results
+        # due to, presumably, the lack of full workspace context.
         entry: cargo +nightly-2025-03-29 fmt
+        pass_filenames: false
       - id: clippy
   - repo: https://github.com/EmbarkStudios/cargo-deny
-    rev: 0.18.0
+    rev: 0.18.2
     hooks:
       - id: cargo-deny
         args:
@@ -22,11 +26,14 @@ repos:
     hooks:
       - id: taplo-format
       - id: taplo-lint
-
+  - repo: https://github.com/bnjbvr/cargo-machete
+    rev: ba1bcd4 # No tag yet with .pre-commit-hooks.yml
+    hooks:
+      - id: cargo-machete
   - repo: local
     hooks:
       - id: dependency-graph
         language: script
         name: Generate dependency graph
         entry: ./hooks/generate-dependency-graph.sh
-        stages: [commit]
+        stages: [pre-commit]
