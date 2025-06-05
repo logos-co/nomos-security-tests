@@ -5,7 +5,7 @@ use nomos_core::{da::blob::info::DispersedBlobInfo, tx::Transaction};
 use nomos_mempool::{
     network::adapters::libp2p::Settings as AdapterSettings, tx::settings::TxMempoolSettings,
 };
-use nomos_node_mod::{
+use nomos_node_mod_da::{
     config::BlendArgs, Config, CryptarchiaArgs, HttpArgs, LogArgs, NetworkArgs, Nomos,
     NomosServiceSettings, Tx,
 };
@@ -60,7 +60,7 @@ fn main() -> Result<()> {
             cl_mempool: TxMempoolSettings {
                 pool: (),
                 network_adapter: AdapterSettings {
-                    topic: String::from(nomos_node_mod::CL_TOPIC),
+                    topic: String::from(nomos_node_mod_da::CL_TOPIC),
                     id: <Tx as Transaction>::hash,
                 },
                 recovery_path: config.mempool.cl_pool_recovery_path,
@@ -68,7 +68,7 @@ fn main() -> Result<()> {
             da_mempool: nomos_mempool::DaMempoolSettings {
                 pool: (),
                 network_adapter: AdapterSettings {
-                    topic: String::from(nomos_node_mod::DA_TOPIC),
+                    topic: String::from(nomos_node_mod_da::DA_TOPIC),
                     id: <BlobInfo as DispersedBlobInfo>::blob_id,
                 },
                 recovery_path: config.mempool.da_pool_recovery_path,
