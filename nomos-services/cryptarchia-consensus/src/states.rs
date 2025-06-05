@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use cl::NoteWitness;
+use cryptarchia_engine::CryptarchiaState;
 use nomos_core::header::HeaderId;
 use nomos_ledger::LedgerState;
 use overwatch::services::state::ServiceState;
@@ -91,7 +92,10 @@ impl<TxS, BxS, NetworkAdapterSettings, BlendAdapterSettings, TimeBackendSettings
         }
     }
 
-    pub(crate) fn from_cryptarchia(cryptarchia: &Cryptarchia, leader: &Leader) -> Self {
+    pub(crate) fn from_cryptarchia<State: CryptarchiaState>(
+        cryptarchia: &Cryptarchia<State>,
+        leader: &Leader,
+    ) -> Self {
         let security_block_header = cryptarchia.consensus.get_security_block_header_id();
         let security_ledger_state = security_block_header
             .and_then(|header| cryptarchia.ledger.state(&header))

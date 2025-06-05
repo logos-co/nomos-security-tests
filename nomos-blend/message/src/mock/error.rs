@@ -1,3 +1,5 @@
+use crate::MessageUnwrapError;
+
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error("Invalid blend message format")]
@@ -8,7 +10,10 @@ pub enum Error {
     InvalidNumberOfLayers,
     #[error("Invalid public key")]
     InvalidPublicKey,
-    #[error("Unwrapping a message is not allowed to this node")]
-    /// e.g. the message cannot be unwrapped using the private key provided
-    MsgUnwrapNotAllowed,
+}
+
+impl From<Error> for MessageUnwrapError<Error> {
+    fn from(e: Error) -> Self {
+        Self::Other(e)
+    }
 }
