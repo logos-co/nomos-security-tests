@@ -9,7 +9,7 @@ members = [
   "nodes/nomos-executor/http-client",
   "nodes/nomos-node/http-client",
   "nodes/nomos-node/node",
-  "nodes/nomos-mod-transport/node",
+  "nodes/nomos-node-mod/node",
   "nomos-blend/core",
   "nomos-blend/message",
   "nomos-blend/network",
