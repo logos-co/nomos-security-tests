@@ -1,24 +1,35 @@
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::marker::PhantomData;
 
 use async_trait::async_trait;
-use bytes::{Bytes, BytesMut};
+use bytes::BytesMut;
 use futures::future::poll_fn;
-use futures::prelude::*;
-use libp2p::core::muxing::StreamMuxer as _;
+use futures::prelude::*; // Required for write_all/read
+use libp2p::core::muxing::StreamMuxer as _; // Keep if StreamMuxer traits are used on Connection/Stream
 use libp2p::core::transport::{DialOpts, ListenerId, Transport, TransportError, TransportEvent};
 use libp2p::core::{multiaddr::Multiaddr, PeerId};
 use libp2p::quic::{tokio::Transport as QuicTransport, Config, Connection, Error, Stream};
 use rand::{thread_rng, Rng as _};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Receiver, Sender};
+// Assuming DaShare is available, e.g.:
+// use kzgrs_backend::common::share::DaShare;
 
-// Mock DA layer types (replace with Nomos's actual DA types)
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+// Placeholder for DaShare if not fully defined in context for this snippet
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DaShare {
-    data: Bytes,
-    merkle_proof: Bytes,
+    pub data: bytes::Bytes, // Simplified example
+    // ... other fields
+}
+
+
+// Definition from types.rs (assumed to be accessible)
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DispersalRequest<Metadata> {
+    pub data: Vec<u8>,
+    pub metadata: Metadata,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -31,6 +42,38 @@ pub trait DaMutator: Send + Sync + Clone + 'static {
     fn mutate_da_message(&self, message: &mut DaMessage);
     fn process_incoming_da_message(&self, message: &mut DaMessage) -> bool;
 }
+
+// Trait for mutating DispersalRequest payloads
+pub trait DispersalDataMutator: Send + Sync + Clone + 'static {
+    fn mutate_dispersal_request<Metadata>(&self, message: &mut DispersalRequest<Metadata>)
+    where
+        Metadata: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync + 'static;
+
+    fn process_incoming_dispersal_request<Metadata>(&self, message: &mut DispersalRequest<Metadata>) -> bool
+    where
+        Metadata: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync + 'static;
+}
+
+// Example No-Op implementation for DispersalDataMutator
+#[derive(Clone, Debug)]
+pub struct NoOpDispersalMutator;
+
+impl DispersalDataMutator for NoOpDispersalMutator {
+    fn mutate_dispersal_request<Metadata>(&self, _message: &mut DispersalRequest<Metadata>)
+    where
+        Metadata: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync + 'static
+    {
+        // No operation
+    }
+
+    fn process_incoming_dispersal_request<Metadata>(&self, _message: &mut DispersalRequest<Metadata>) -> bool
+    where
+        Metadata: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync + 'static
+    {
+        true // Always valid
+    }
+}
+
 
 // Trait for low-level packet mutation
 pub trait PacketMutator: Send + Sync + Clone + 'static {
@@ -103,11 +146,12 @@ impl DaMutator for DaBitFlipMutator {
         let mut rng = thread_rng();
         for share in &mut message.shares {
             if rng.gen::<f64>() < self.corruption_probability {
-                let mut data = BytesMut::from(share.data.as_ref());
-                if !data.is_empty() {
-                    let index = rng.gen_range(0..data.len());
-                    data[index] ^= 1;
-                    share.data = data.freeze();
+                // Assuming share.data is Bytes, convert to BytesMut, mutate, then back to Bytes
+                let mut data_mut = BytesMut::from(share.data.as_ref());
+                if !data_mut.is_empty() {
+                    let index = rng.gen_range(0..data_mut.len());
+                    data_mut[index] ^= 1;
+                    share.data = data_mut.freeze();
                 }
             }
         }
@@ -128,7 +172,7 @@ impl DaMutator for DaBitFlipMutator {
 pub struct MutatedQuicTransport<M: PacketMutator, D: DaMutator> {
     inner: QuicTransport,
     packet_mutator: M,
-    da_mutator: D,
+    da_mutator: D, // This DaMutator is part of the transport's configuration
     control_rx: Option<Receiver<(usize, u8)>>,
 }
 
@@ -205,7 +249,7 @@ fn map_quic_error(error: Error) -> io::Error {
 pub struct MutatedDial<M: PacketMutator, D: DaMutator> {
     inner: <QuicTransport as Transport>::Dial,
     packet_mutator: M,
-    da_mutator: D,
+    da_mutator: D, // Field kept for consistency with original structure
 }
 
 impl<M: PacketMutator + Unpin, D: DaMutator + Unpin> Future for MutatedDial<M, D> {
@@ -213,7 +257,7 @@ impl<M: PacketMutator + Unpin, D: DaMutator + Unpin> Future for MutatedDial<M, D
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        // Reference fields to ensure they are used
+        // Reference fields to ensure they are used (as in original)
         let _ = &this.packet_mutator;
         let _ = &this.da_mutator;
         match Pin::new(&mut this.inner).poll(cx) {
@@ -228,7 +272,7 @@ impl<M: PacketMutator + Unpin, D: DaMutator + Unpin> Future for MutatedDial<M, D
 pub struct MutatedUpgrade<M: PacketMutator, D: DaMutator> {
     inner: <QuicTransport as Transport>::ListenerUpgrade,
     packet_mutator: M,
-    da_mutator: D,
+    da_mutator: D, // Field kept for consistency with original structure
 }
 
 impl<M: PacketMutator + Unpin, D: DaMutator + Unpin> Future for MutatedUpgrade<M, D> {
@@ -236,7 +280,7 @@ impl<M: PacketMutator + Unpin, D: DaMutator + Unpin> Future for MutatedUpgrade<M
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        // Reference fields to ensure they are used
+        // Reference fields to ensure they are used (as in original)
         let _ = &this.packet_mutator;
         let _ = &this.da_mutator;
         match Pin::new(&mut this.inner).poll(cx) {
@@ -350,72 +394,170 @@ impl<M: PacketMutator + Unpin, D: DaMutator + Unpin> Transport for MutatedQuicTr
     }
 }
 
-// DA layer behaviour
-pub struct DaBehaviour<D: DaMutator> {
-    da_mutator: D,
+// Unified message handling behaviour
+pub struct MessageHandlerBehaviour<DAMutator, DispMutator>
+where
+    DAMutator: DaMutator,
+    DispMutator: DispersalDataMutator,
+{
+    da_mutator: DAMutator,
+    dispersal_data_mutator: DispMutator,
 }
 
-impl<D: DaMutator> DaBehaviour<D> {
-    pub const fn new(da_mutator: D) -> Self {
-        Self { da_mutator }
+impl<DAMutator, DispMutator> MessageHandlerBehaviour<DAMutator, DispMutator>
+where
+    DAMutator: DaMutator,
+    DispMutator: DispersalDataMutator,
+{
+    pub const fn new(da_mutator: DAMutator, dispersal_data_mutator: DispMutator) -> Self {
+        Self {
+            da_mutator,
+            dispersal_data_mutator,
+        }
     }
 
-    pub async fn send_da_message<M: PacketMutator>(
+    // Methods for DaMessage
+    pub async fn send_da_message<PktMutator: PacketMutator>(
         &self,
         conn: &mut Connection,
         mut message: DaMessage,
-        packet_mutator: &M,
+        packet_mutator: &PktMutator,
     ) -> io::Result<()> {
         self.da_mutator.mutate_da_message(&mut message);
         let serialized = bincode::serialize(&message).map_err(io::Error::other)?;
-        let mut serialized = BytesMut::from(serialized.as_slice());
-        packet_mutator.mutate_outgoing(&mut serialized);
+        let mut serialized_bytes = BytesMut::from(serialized.as_slice());
+        packet_mutator.mutate_outgoing(&mut serialized_bytes);
+
+        // Note: process_incoming_da_message was used as a pre-send check in original.
+        // If it's a validation that can fail serialization/mutation, it's better before those.
+        // If it's a check on the final form, its placement here is fine.
         if self.da_mutator.process_incoming_da_message(&mut message) {
             let mut stream = open_outbound_stream(conn).await?;
             stream
-                .write_all(&serialized)
+                .write_all(&serialized_bytes)
                 .await
                 .map_err(io::Error::other)?;
+            stream.close().await.map_err(io::Error::other)?; // Good practice to close stream
             Ok(())
         } else {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Invalid DA message",
+                "Invalid DA message after mutation/processing",
             ))
         }
     }
 
-    pub async fn receive_da_message<M: PacketMutator>(
+    pub async fn receive_da_message<PktMutator: PacketMutator>(
         &self,
         conn: &mut Connection,
-        packet_mutator: &M,
+        packet_mutator: &PktMutator,
     ) -> io::Result<DaMessage> {
         let mut stream = accept_inbound_stream(conn).await?;
-        let mut buffer = BytesMut::with_capacity(1024);
+        let mut buffer = BytesMut::with_capacity(1024); // Initial capacity
+        
+        // Read loop (assuming typical stream reading pattern)
         loop {
-            let mut chunk = vec![0u8; 16384];
-            match futures::io::AsyncReadExt::read(&mut stream, &mut chunk).await {
+            let mut chunk = BytesMut::with_capacity(16384); // Max datagram size for QUIC
+            match stream.read(&mut chunk).await {
                 Ok(0) => break, // EOF
                 Ok(n) => buffer.extend_from_slice(&chunk[..n]),
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break, // Can happen with QUIC streams
                 Err(e) => return Err(io::Error::other(e)),
             }
         }
+
+
         if !packet_mutator.process_incoming(&mut buffer) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Invalid packet data",
+                "Invalid packet data after packet_mutator processing",
             ));
         }
+
         let mut message: DaMessage = bincode::deserialize(&buffer[..])
-            .map_err(io::Error::other)?;
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Deserialization failed: {}", e)))?;
+            
         if self.da_mutator.process_incoming_da_message(&mut message) {
             Ok(message)
         } else {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Invalid DA message",
+                "Invalid DA message after da_mutator processing",
+            ))
+        }
+    }
+
+    // Methods for DispersalRequest
+    pub async fn send_dispersal_request<PktMutator, Metadata>(
+        &self,
+        conn: &mut Connection,
+        mut message: DispersalRequest<Metadata>,
+        packet_mutator: &PktMutator,
+    ) -> io::Result<()>
+    where
+        PktMutator: PacketMutator,
+        Metadata: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync + 'static,
+    {
+        self.dispersal_data_mutator.mutate_dispersal_request(&mut message);
+        let serialized = bincode::serialize(&message).map_err(io::Error::other)?;
+        let mut serialized_bytes = BytesMut::from(serialized.as_slice());
+        packet_mutator.mutate_outgoing(&mut serialized_bytes);
+
+        if self.dispersal_data_mutator.process_incoming_dispersal_request(&mut message) {
+            let mut stream = open_outbound_stream(conn).await?;
+            stream
+                .write_all(&serialized_bytes)
+                .await
+                .map_err(io::Error::other)?;
+            stream.close().await.map_err(io::Error::other)?;
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid DispersalRequest after mutation/processing",
+            ))
+        }
+    }
+
+    pub async fn receive_dispersal_request<PktMutator, Metadata>(
+        &self,
+        conn: &mut Connection,
+        packet_mutator: &PktMutator,
+    ) -> io::Result<DispersalRequest<Metadata>>
+    where
+        PktMutator: PacketMutator,
+        Metadata: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync + 'static,
+    {
+        let mut stream = accept_inbound_stream(conn).await?;
+        let mut buffer = BytesMut::with_capacity(1024);
+        
+        loop {
+            let mut chunk = BytesMut::with_capacity(16384);
+            match stream.read(&mut chunk).await {
+                Ok(0) => break, 
+                Ok(n) => buffer.extend_from_slice(&chunk[..n]),
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(io::Error::other(e)),
+            }
+        }
+
+        if !packet_mutator.process_incoming(&mut buffer) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid packet data after packet_mutator processing (DispersalRequest)",
+            ));
+        }
+
+        let mut message: DispersalRequest<Metadata> = bincode::deserialize(&buffer[..])
+             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Deserialization failed (DispersalRequest): {}", e)))?;
+            
+        if self.dispersal_data_mutator.process_incoming_dispersal_request(&mut message) {
+            Ok(message)
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid DispersalRequest after dispersal_data_mutator processing",
             ))
         }
     }
 }
-
