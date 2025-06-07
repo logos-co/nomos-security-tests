@@ -39,6 +39,7 @@ use crate::{
     },
     SubnetworkId,
 };
+use crate::swarm::common::mutated_transport::{DaBitFlipMutator, DynamicBitFlipMutator, MutatedQuicTransport};
 
 // Metrics
 const EVENT_SAMPLING: &str = "sampling";
@@ -135,9 +136,18 @@ where
             Membership,
         >,
     > {
+
+        // Create mutators
+        let (packet_mutator, _control_rx) = DynamicBitFlipMutator::new(0, 0);
+        let da_mutator = DaBitFlipMutator::new(0.1); // 10% corruption probability
+
+        
         SwarmBuilder::with_existing_identity(key)
             .with_tokio()
-            .with_quic()
+            .with_other_transport(|key| {
+                MutatedQuicTransport::new(libp2p::quic::Config::new(key),packet_mutator, da_mutator, None)
+            })
+            .unwrap()
             .with_behaviour(|key| {
                 ValidatorBehaviour::new(
                     key,
