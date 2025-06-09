@@ -1,7 +1,6 @@
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::marker::PhantomData;
 
 use async_trait::async_trait;
 use bytes::BytesMut;
@@ -14,15 +13,7 @@ use libp2p::quic::{tokio::Transport as QuicTransport, Config, Connection, Error,
 use rand::{thread_rng, Rng as _};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Receiver, Sender};
-// Assuming DaShare is available, e.g.:
-// use kzgrs_backend::common::share::DaShare;
-
-// Placeholder for DaShare if not fully defined in context for this snippet
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DaShare {
-    pub data: bytes::Bytes, // Simplified example
-    // ... other fields
-}
+use kzgrs_backend::common::share::DaShare;
 
 
 // Definition from types.rs (assumed to be accessible)
@@ -146,13 +137,7 @@ impl DaMutator for DaBitFlipMutator {
         let mut rng = thread_rng();
         for share in &mut message.shares {
             if rng.gen::<f64>() < self.corruption_probability {
-                // Assuming share.data is Bytes, convert to BytesMut, mutate, then back to Bytes
-                let mut data_mut = BytesMut::from(share.data.as_ref());
-                if !data_mut.is_empty() {
-                    let index = rng.gen_range(0..data_mut.len());
-                    data_mut[index] ^= 1;
-                    share.data = data_mut.freeze();
-                }
+                share.share_idx ^= 0xFF;
             }
         }
     }
@@ -549,7 +534,7 @@ where
         }
 
         let mut message: DispersalRequest<Metadata> = bincode::deserialize(&buffer[..])
-             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Deserialization failed (DispersalRequest): {}", e)))?;
+             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Deserialization failed (DispersalRequest): {e}")))?;
             
         if self.dispersal_data_mutator.process_incoming_dispersal_request(&mut message) {
             Ok(message)
