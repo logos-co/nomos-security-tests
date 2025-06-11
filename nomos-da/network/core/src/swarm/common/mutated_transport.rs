@@ -460,7 +460,7 @@ where
         }
 
         let mut message: DaMessage = bincode::deserialize(&buffer[..])
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Deserialization failed: {}", e)))?;
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Deserialization failed: {e}")))?;
             
         if self.da_mutator.process_incoming_da_message(&mut message) {
             Ok(message)
