@@ -12,10 +12,10 @@ use crate::{
     maintenance::monitor::{ConnectionMonitor, ConnectionMonitorOutput, PeerStatus},
     protocols::{
         dispersal::{
-            executor::behaviour::{
+            executor::mutated_behaviour::{
                 DispersalError as ExecutorDispersalError, DispersalExecutorEvent,
             },
-            validator::behaviour::{
+            validator::mutated_behaviour::{
                 DispersalError as ValidatorDispersalError,
                 DispersalEvent as DispersalValidatorEvent,
             },

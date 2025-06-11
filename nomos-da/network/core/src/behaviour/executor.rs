@@ -10,8 +10,8 @@ use crate::{
     },
     protocols::{
         dispersal::{
-            executor::behaviour::DispersalExecutorBehaviour,
-            validator::behaviour::DispersalValidatorBehaviour,
+            executor::mutated_behaviour::DispersalExecutorBehaviour,
+            validator::mutated_behaviour::DispersalValidatorBehaviour,
         },
         replication::behaviour::{ReplicationBehaviour, ReplicationConfig},
         sampling::behaviour::SamplingBehaviour,
