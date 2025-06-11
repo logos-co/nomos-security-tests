@@ -8,7 +8,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::{
     maintenance::monitor::{ConnectionMonitor, ConnectionMonitorBehaviour},
     protocols::{
-        dispersal::validator::behaviour::DispersalEvent,
+        dispersal::validator::mutated_behaviour::DispersalEvent,
         replication::behaviour::{ReplicationBehaviour, ReplicationEvent},
         sampling::behaviour::SamplingEvent,
     },

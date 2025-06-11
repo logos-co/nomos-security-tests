@@ -9,7 +9,7 @@ use crate::{
         monitor::{ConnectionMonitor, ConnectionMonitorBehaviour},
     },
     protocols::{
-        dispersal::validator::behaviour::DispersalValidatorBehaviour,
+        dispersal::validator::mutated_behaviour::DispersalValidatorBehaviour,
         replication::behaviour::{ReplicationBehaviour, ReplicationConfig},
         sampling::behaviour::SamplingBehaviour,
     },

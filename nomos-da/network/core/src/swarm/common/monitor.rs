@@ -15,7 +15,7 @@ use crate::{
             executor::behaviour::{
                 DispersalError as ExecutorDispersalError, DispersalExecutorEvent,
             },
-            validator::behaviour::{
+            validator::mutated_behaviour::{
                 DispersalError as ValidatorDispersalError,
                 DispersalEvent as DispersalValidatorEvent,
             },

@@ -11,7 +11,7 @@ use crate::{
     protocols::{
         dispersal::{
             executor::behaviour::DispersalExecutorBehaviour,
-            validator::behaviour::DispersalValidatorBehaviour,
+            validator::mutated_behaviour::DispersalValidatorBehaviour,
         },
         replication::behaviour::{ReplicationBehaviour, ReplicationConfig},
         sampling::behaviour::SamplingBehaviour,
