@@ -7,7 +7,7 @@ use either::Either;
 use futures::{
     future::BoxFuture,
     stream::{BoxStream, FuturesUnordered},
-    AsyncWriteExt as _, FutureExt as _, StreamExt as _, 
+    AsyncWriteExt as _, FutureExt as _, StreamExt as _,
 };
 use kzgrs_backend::common::share::DaShare;
 use libp2p::{
@@ -151,7 +151,8 @@ pub enum DispersalExecutorEvent {
 }
 
 /// A function type that can transform dispersal messages
-pub type MessageTransformer = Box<dyn FnMut(dispersal::DispersalRequest) -> dispersal::DispersalRequest + Send + Sync>;
+pub type MessageTransformer =
+    Box<dyn FnMut(dispersal::DispersalRequest) -> dispersal::DispersalRequest + Send + Sync>;
 
 struct DispersalStream {
     stream: Stream,
@@ -267,7 +268,11 @@ where
             .open_stream(peer_id, DISPERSAL_PROTOCOL)
             .await
             .map_err(|error| DispersalError::OpenStreamError { peer_id, error })?;
-        Ok(DispersalStream { stream, peer_id, message_transformer: None })
+        Ok(DispersalStream {
+            stream,
+            peer_id,
+            message_transformer: None,
+        })
     }
 
     /// Get a hook to the sender channel of open stream events
@@ -328,11 +333,11 @@ where
         let response: dispersal::DispersalResponse = unpack_from_reader(&mut stream.stream)
             .await
             .map_err(|error| DispersalError::Io {
-                peer_id: stream.peer_id,
-                error,
-                blob_id,
-                subnetwork_id,
-            })?;
+            peer_id: stream.peer_id,
+            error,
+            blob_id,
+            subnetwork_id,
+        })?;
 
         Ok((blob_id, subnetwork_id, response, stream))
     }

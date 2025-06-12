@@ -22,7 +22,8 @@ use crate::{
     maintenance::{balancer::ConnectionBalancerCommand, monitor::ConnectionMonitorCommand},
     protocols::{
         dispersal::{
-            executor::mutated_behaviour::DispersalExecutorEvent, validator::mutated_behaviour::DispersalEvent,
+            executor::mutated_behaviour::DispersalExecutorEvent,
+            validator::mutated_behaviour::DispersalEvent,
         },
         replication::behaviour::{ReplicationConfig, ReplicationEvent},
         sampling::behaviour::SamplingEvent,
@@ -34,6 +35,7 @@ use crate::{
                 monitor_event,
             },
             monitor::MonitorEvent,
+            mutated_transport::{DynamicBitFlipMutator, MutatedQuicTransport},
             policy::DAConnectionPolicy,
         },
         validator::ValidatorEventsStream,
@@ -144,9 +146,15 @@ where
             Membership,
         >,
     > {
+        // Create mutators
+        let (packet_mutator, _control_rx) = DynamicBitFlipMutator::new(0, 0);
+
         SwarmBuilder::with_existing_identity(key)
             .with_tokio()
-            .with_quic()
+            .with_other_transport(|key| {
+                MutatedQuicTransport::new(libp2p::quic::Config::new(key), packet_mutator, None)
+            })
+            .unwrap()
             .with_behaviour(|key| {
                 ExecutorBehaviour::new(
                     key,

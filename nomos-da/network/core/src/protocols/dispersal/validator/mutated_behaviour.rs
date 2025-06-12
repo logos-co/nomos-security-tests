@@ -76,7 +76,8 @@ type DispersalTask =
     BoxFuture<'static, Result<(PeerId, dispersal::DispersalRequest, Stream), DispersalError>>;
 
 /// A function type that can transform dispersal messages
-pub type MessageTransformer = Box<dyn FnMut(dispersal::DispersalRequest) -> dispersal::DispersalRequest + Send + Sync>;
+pub type MessageTransformer =
+    Box<dyn FnMut(dispersal::DispersalRequest) -> dispersal::DispersalRequest + Send + Sync>;
 
 pub struct DispersalValidatorBehaviour<Membership> {
     stream_behaviour: libp2p_stream::Behaviour,

@@ -1,15 +1,21 @@
-use std::io;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    io,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use async_trait::async_trait;
 use bytes::BytesMut;
-use futures::future::poll_fn;
-use futures::prelude::*; // Required for write_all/read
-use libp2p::core::muxing::StreamMuxer as _; // Keep if StreamMuxer traits are used on Connection/Stream
-use libp2p::core::transport::{DialOpts, ListenerId, Transport, TransportError, TransportEvent};
-use libp2p::core::{multiaddr::Multiaddr, PeerId};
-use libp2p::quic::{tokio::Transport as QuicTransport, Config, Connection, Error, Stream};
+use futures::{future::poll_fn, prelude::*};
+use libp2p::{
+    core::{
+        multiaddr::Multiaddr,
+        muxing::StreamMuxer as _,
+        transport::{DialOpts, ListenerId, Transport, TransportError, TransportEvent},
+        PeerId,
+    },
+    quic::{tokio::Transport as QuicTransport, Config, Connection, Error, Stream},
+};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 // Trait for low-level packet mutation
@@ -63,7 +69,6 @@ impl PacketMutator for DynamicBitFlipMutator {
         }
     }
 }
-
 
 // Mutated QUIC Transport with DA layer mutation
 pub struct MutatedQuicTransport<M: PacketMutator> {
@@ -125,10 +130,9 @@ fn map_quic_error(error: Error) -> io::Error {
             io::ErrorKind::ConnectionRefused,
             format!("QUIC reach error: {e}"),
         ),
-        Error::HandshakeTimedOut => io::Error::new(
-            io::ErrorKind::TimedOut,
-            "QUIC handshake timed out",
-        ),
+        Error::HandshakeTimedOut => {
+            io::Error::new(io::ErrorKind::TimedOut, "QUIC handshake timed out")
+        }
         Error::NoActiveListenerForDialAsListener => io::Error::new(
             io::ErrorKind::AddrNotAvailable,
             "No active listener for dial as listener",
