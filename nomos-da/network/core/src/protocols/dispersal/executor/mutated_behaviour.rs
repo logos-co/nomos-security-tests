@@ -227,6 +227,12 @@ where
         let pending_shares_stream = UnboundedReceiverStream::new(receiver).boxed();
         let disconnected_pending_shares = HashMap::new();
 
+        let message_transformer: Option<MessageTransformer> = Some(Box::new(|mut request: dispersal::DispersalRequest| {
+            // Remove the last chunk from Column
+            request.share.data.column.0.pop();
+            request
+        }));
+
         Self {
             stream_behaviour,
             tasks,
@@ -241,7 +247,7 @@ where
             pending_shares_sender,
             pending_shares_stream,
             waker: None,
-            message_transformer: None,
+            message_transformer,
         }
     }
 
