@@ -29,7 +29,7 @@ use subnetworks_assignations::MembershipHandler;
 use thiserror::Error;
 use tokio::sync::{mpsc, mpsc::UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::{protocol::DISPERSAL_PROTOCOL, SubnetworkId};
 
@@ -227,11 +227,12 @@ where
         let pending_shares_stream = UnboundedReceiverStream::new(receiver).boxed();
         let disconnected_pending_shares = HashMap::new();
 
-        let message_transformer: Option<MessageTransformer> = Some(Box::new(|mut request: dispersal::DispersalRequest| {
-            // Remove the last chunk from Column
-            request.share.data.column.0.pop();
-            request
-        }));
+        let message_transformer: Option<MessageTransformer> =
+            Some(Box::new(|mut request: dispersal::DispersalRequest| {
+                // Remove the last chunk from Column
+                request.share.data.column.0.pop();
+                request
+            }));
 
         Self {
             stream_behaviour,
@@ -309,9 +310,12 @@ where
             subnetwork_id,
         };
 
-        // Apply message transformation if a transformer is set
+        //Apply message transformation if a transformer is set
         let transformed_request = if let Some(transformer) = &mut stream.message_transformer {
-            transformer(request)
+            debug!("Original dispersal request {request:?}");
+            let request = transformer(request);
+            debug!("Mutated dispersal request {request:?}");
+            request
         } else {
             request
         };
