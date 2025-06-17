@@ -200,8 +200,6 @@ pub struct DispersalExecutorBehaviour<Membership: MembershipHandler> {
     pending_shares_stream: BoxStream<'static, (Membership::NetworkId, DaShare)>,
     /// Waker for dispersal polling
     waker: Option<Waker>,
-    /// Optional message transformer
-    message_transformer: Option<MessageTransformer>,
 }
 
 impl<Membership> DispersalExecutorBehaviour<Membership>
@@ -220,19 +218,12 @@ where
         let control = stream_behaviour.new_control();
         let pending_out_streams = UnboundedReceiverStream::new(receiver)
             .zip(futures::stream::repeat(control))
-            .then(|(peer_id, control)| Self::open_stream(peer_id, control))
+            .then(|(peer_id, control)| Self::open_stream(peer_id, control, None))
             .boxed();
 
         let (pending_shares_sender, receiver) = mpsc::unbounded_channel();
         let pending_shares_stream = UnboundedReceiverStream::new(receiver).boxed();
         let disconnected_pending_shares = HashMap::new();
-
-        let message_transformer: Option<MessageTransformer> =
-            Some(Box::new(|mut request: dispersal::DispersalRequest| {
-                // Remove the last chunk from Column
-                request.share.data.column.0.pop();
-                request
-            }));
 
         Self {
             stream_behaviour,
@@ -248,18 +239,16 @@ where
             pending_shares_sender,
             pending_shares_stream,
             waker: None,
-            message_transformer,
         }
     }
 
-    /// Set a new message transformer function
-    pub fn set_message_transformer(&mut self, transformer: MessageTransformer) {
-        self.message_transformer = Some(transformer);
-    }
-
-    /// Remove the current message transformer
-    pub fn clear_message_transformer(&mut self) {
-        self.message_transformer = None;
+    #[must_use]
+    pub fn default_message_transformer() -> Option<MessageTransformer> {
+        Some(Box::new(|mut request: dispersal::DispersalRequest| {
+            // Remove the last chunk from Column
+            request.share.data.column.0.pop();
+            request
+        }))
     }
 
     pub fn update_membership(&mut self, membership: Membership) {
@@ -270,15 +259,19 @@ where
     async fn open_stream(
         peer_id: PeerId,
         mut control: Control,
+        mut message_transformer: Option<MessageTransformer>,
     ) -> Result<DispersalStream, DispersalError> {
         let stream = control
             .open_stream(peer_id, DISPERSAL_PROTOCOL)
             .await
             .map_err(|error| DispersalError::OpenStreamError { peer_id, error })?;
+        if message_transformer.is_none() {
+            message_transformer = Self::default_message_transformer();
+        }
         Ok(DispersalStream {
             stream,
             peer_id,
-            message_transformer: None,
+            message_transformer,
         })
     }
 
