@@ -245,8 +245,8 @@ where
     #[must_use]
     pub fn default_message_transformer() -> Option<MessageTransformer> {
         Some(Box::new(|mut request: dispersal::DispersalRequest| {
-            // Remove the last chunk from Column
-            request.share.data.column.0.pop();
+            // Remove the last byte of the first chunk from Column
+            request.share.data.column.0[0].0.pop();
             request
         }))
     }
