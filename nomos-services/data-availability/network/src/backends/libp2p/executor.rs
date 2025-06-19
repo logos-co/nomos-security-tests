@@ -11,7 +11,7 @@ use log::error;
 use nomos_core::da::BlobId;
 use nomos_da_network_core::{
     maintenance::{balancer::ConnectionBalancerCommand, monitor::ConnectionMonitorCommand},
-    protocols::dispersal::executor::mutated_behaviour::DispersalExecutorEvent,
+    protocols::dispersal::executor::behaviour::DispersalExecutorEvent,
     swarm::{executor::ExecutorSwarm, BalancerStats, MonitorStats},
     SubnetworkId,
 };

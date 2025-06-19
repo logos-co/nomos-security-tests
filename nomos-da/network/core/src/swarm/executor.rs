@@ -22,8 +22,8 @@ use crate::{
     maintenance::{balancer::ConnectionBalancerCommand, monitor::ConnectionMonitorCommand},
     protocols::{
         dispersal::{
-            executor::mutated_behaviour::DispersalExecutorEvent,
-            validator::mutated_behaviour::DispersalEvent,
+            executor::behaviour::DispersalExecutorEvent,
+            validator::behaviour::DispersalEvent,
         },
         replication::behaviour::{ReplicationConfig, ReplicationEvent},
         sampling::behaviour::SamplingEvent,

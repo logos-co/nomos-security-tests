@@ -73,18 +73,13 @@ impl DispersalEvent {
 }
 
 type DispersalTask =
-    BoxFuture<'static, Result<(PeerId, dispersal::DispersalRequest, Stream), DispersalError>>;
-
-/// A function type that can transform dispersal messages
-pub type MessageTransformer =
-    Box<dyn FnMut(dispersal::DispersalRequest) -> dispersal::DispersalRequest + Send + Sync>;
+BoxFuture<'static, Result<(PeerId, dispersal::DispersalRequest, Stream), DispersalError>>;
 
 pub struct DispersalValidatorBehaviour<Membership> {
     stream_behaviour: libp2p_stream::Behaviour,
     incoming_streams: IncomingStreams,
     tasks: FuturesUnordered<DispersalTask>,
     membership: Membership,
-    message_transformer: Option<MessageTransformer>,
 }
 
 impl<Membership: MembershipHandler> DispersalValidatorBehaviour<Membership> {
@@ -100,22 +95,11 @@ impl<Membership: MembershipHandler> DispersalValidatorBehaviour<Membership> {
             incoming_streams,
             tasks,
             membership,
-            message_transformer: None,
         }
     }
 
     pub fn update_membership(&mut self, membership: Membership) {
         self.membership = membership;
-    }
-
-    /// Set a new message transformer function
-    pub fn set_message_transformer(&mut self, transformer: MessageTransformer) {
-        self.message_transformer = Some(transformer);
-    }
-
-    /// Remove the current message transformer
-    pub fn clear_message_transformer(&mut self) {
-        self.message_transformer = None;
     }
 
     /// Stream handling messages task.
@@ -146,7 +130,7 @@ impl<Membership: MembershipHandler> DispersalValidatorBehaviour<Membership> {
 }
 
 impl<M: MembershipHandler<Id = PeerId, NetworkId = SubnetworkId> + 'static> NetworkBehaviour
-    for DispersalValidatorBehaviour<M>
+for DispersalValidatorBehaviour<M>
 {
     type ConnectionHandler = Either<
         <libp2p_stream::Behaviour as NetworkBehaviour>::ConnectionHandler,
@@ -202,15 +186,10 @@ impl<M: MembershipHandler<Id = PeerId, NetworkId = SubnetworkId> + 'static> Netw
         let Self {
             incoming_streams,
             tasks,
-            message_transformer,
             ..
         } = self;
         match tasks.poll_next_unpin(cx) {
-            Poll::Ready(Some(Ok((peer_id, mut message, stream)))) => {
-                // Apply message transformation if a transformer is set
-                if let Some(transformer) = message_transformer {
-                    message = transformer(message);
-                }
+            Poll::Ready(Some(Ok((peer_id, message, stream)))) => {
                 tasks.push(Self::handle_new_stream(peer_id, stream).boxed());
                 cx.waker().wake_by_ref();
                 return Poll::Ready(ToSwarm::GenerateEvent(DispersalEvent::IncomingMessage {

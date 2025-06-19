@@ -21,7 +21,7 @@ use crate::{
     behaviour::validator::{ValidatorBehaviour, ValidatorBehaviourEvent},
     maintenance::{balancer::ConnectionBalancerCommand, monitor::ConnectionMonitorCommand},
     protocols::{
-        dispersal::validator::mutated_behaviour::DispersalEvent,
+        dispersal::validator::behaviour::DispersalEvent,
         replication::behaviour::{ReplicationConfig, ReplicationEvent},
         sampling::behaviour::SamplingEvent,
     },

@@ -5,7 +5,7 @@ use kzgrs_backend::common::share::DaShare;
 use nomos_core::da::BlobId;
 use nomos_da_network_core::{
     protocols::{
-        dispersal::executor::mutated_behaviour::DispersalExecutorEvent,
+        dispersal::executor::behaviour::DispersalExecutorEvent,
         sampling::behaviour::SamplingError,
     },
     PeerId, SubnetworkId,

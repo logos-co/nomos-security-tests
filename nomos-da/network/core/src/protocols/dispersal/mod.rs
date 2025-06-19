@@ -16,8 +16,8 @@ pub mod test {
 
     use crate::{
         protocols::dispersal::{
-            executor::mutated_behaviour::DispersalExecutorBehaviour,
-            validator::mutated_behaviour::{DispersalEvent, DispersalValidatorBehaviour},
+            executor::behaviour::DispersalExecutorBehaviour,
+            validator::behaviour::{DispersalEvent, DispersalValidatorBehaviour},
         },
         test_utils::AllNeighbours,
     };

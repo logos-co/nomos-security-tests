@@ -7,7 +7,7 @@ use either::Either;
 use futures::{
     future::BoxFuture,
     stream::{BoxStream, FuturesUnordered},
-    AsyncWriteExt as _, FutureExt as _, StreamExt as _,
+    AsyncWriteExt as _, FutureExt as _, StreamExt as _, TryFutureExt as _,
 };
 use kzgrs_backend::common::share::DaShare;
 use libp2p::{
@@ -29,7 +29,7 @@ use subnetworks_assignations::MembershipHandler;
 use thiserror::Error;
 use tokio::sync::{mpsc, mpsc::UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::{protocol::DISPERSAL_PROTOCOL, SubnetworkId};
 
@@ -150,14 +150,9 @@ pub enum DispersalExecutorEvent {
     DispersalError { error: DispersalError },
 }
 
-/// A function type that can transform dispersal messages
-pub type MessageTransformer =
-    Box<dyn FnMut(dispersal::DispersalRequest) -> dispersal::DispersalRequest + Send + Sync>;
-
 struct DispersalStream {
     stream: Stream,
     peer_id: PeerId,
-    message_transformer: Option<MessageTransformer>,
 }
 
 type StreamHandlerFutureSuccess = (
@@ -218,7 +213,7 @@ where
         let control = stream_behaviour.new_control();
         let pending_out_streams = UnboundedReceiverStream::new(receiver)
             .zip(futures::stream::repeat(control))
-            .then(|(peer_id, control)| Self::open_stream(peer_id, control, None))
+            .then(|(peer_id, control)| Self::open_stream(peer_id, control))
             .boxed();
 
         let (pending_shares_sender, receiver) = mpsc::unbounded_channel();
@@ -242,15 +237,6 @@ where
         }
     }
 
-    #[must_use]
-    pub fn default_message_transformer() -> Option<MessageTransformer> {
-        Some(Box::new(|mut request: dispersal::DispersalRequest| {
-            // Remove the last byte of the first chunk from Column
-            request.share.data.column.0[0].0.pop();
-            request
-        }))
-    }
-
     pub fn update_membership(&mut self, membership: Membership) {
         self.membership = membership;
     }
@@ -259,20 +245,12 @@ where
     async fn open_stream(
         peer_id: PeerId,
         mut control: Control,
-        mut message_transformer: Option<MessageTransformer>,
     ) -> Result<DispersalStream, DispersalError> {
         let stream = control
             .open_stream(peer_id, DISPERSAL_PROTOCOL)
             .await
             .map_err(|error| DispersalError::OpenStreamError { peer_id, error })?;
-        if message_transformer.is_none() {
-            message_transformer = Self::default_message_transformer();
-        }
-        Ok(DispersalStream {
-            stream,
-            peer_id,
-            message_transformer,
-        })
+        Ok(DispersalStream { stream, peer_id })
     }
 
     /// Get a hook to the sender channel of open stream events
@@ -294,26 +272,19 @@ where
     ) -> Result<StreamHandlerFutureSuccess, DispersalError> {
         let blob_id = message.blob_id();
         let blob_id: BlobId = blob_id.clone().try_into().unwrap();
+        let message = dispersal::DispersalRequest::new(Share::new(blob_id, message), subnetwork_id);
         let peer_id = stream.peer_id;
-        let request = dispersal::DispersalRequest {
-            share: Share {
+        pack_to_writer(&message, &mut stream.stream)
+            .map_err(|error| DispersalError::Io {
+                peer_id,
+                error,
                 blob_id,
-                data: message,
-            },
-            subnetwork_id,
-        };
-
-        //Apply message transformation if a transformer is set
-        let transformed_request = if let Some(transformer) = &mut stream.message_transformer {
-            debug!("Original dispersal request {request:?}");
-            let request = transformer(request);
-            debug!("Mutated dispersal request {request:?}");
-            request
-        } else {
-            request
-        };
-
-        pack_to_writer(&transformed_request, &mut stream.stream)
+                subnetwork_id,
+            })
+            .await?;
+        stream
+            .stream
+            .flush()
             .await
             .map_err(|error| DispersalError::Io {
                 peer_id,
@@ -321,27 +292,15 @@ where
                 blob_id,
                 subnetwork_id,
             })?;
-
-        stream
-            .stream
-            .flush()
+        let response: dispersal::DispersalResponse = unpack_from_reader(&mut stream.stream)
             .await
             .map_err(|error| DispersalError::Io {
-                peer_id: stream.peer_id,
+                peer_id,
                 error,
                 blob_id,
                 subnetwork_id,
             })?;
-
-        let response: dispersal::DispersalResponse = unpack_from_reader(&mut stream.stream)
-            .await
-            .map_err(|error| DispersalError::Io {
-            peer_id: stream.peer_id,
-            error,
-            blob_id,
-            subnetwork_id,
-        })?;
-
+        // `blob_id` should always be a 32bytes hash
         Ok((blob_id, subnetwork_id, response, stream))
     }
 
@@ -384,7 +343,7 @@ where
 }
 
 impl<Membership: MembershipHandler<Id = PeerId, NetworkId = SubnetworkId> + 'static>
-    DispersalExecutorBehaviour<Membership>
+DispersalExecutorBehaviour<Membership>
 {
     /// Schedule a new task for sending the blob, if stream is not available
     /// queue messages for later processing.
@@ -459,7 +418,7 @@ impl<Membership: MembershipHandler<Id = PeerId, NetworkId = SubnetworkId> + 'sta
 }
 
 impl<M: MembershipHandler<Id = PeerId, NetworkId = SubnetworkId> + 'static> NetworkBehaviour
-    for DispersalExecutorBehaviour<M>
+for DispersalExecutorBehaviour<M>
 {
     type ConnectionHandler = Either<
         <libp2p_stream::Behaviour as NetworkBehaviour>::ConnectionHandler,
