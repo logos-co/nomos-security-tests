@@ -23,7 +23,7 @@ pub struct DaEncoderParams {
 }
 
 impl DaEncoderParams {
-    pub const MAX_BLS12_381_ENCODING_CHUNK_SIZE: usize = 30;
+    pub const MAX_BLS12_381_ENCODING_CHUNK_SIZE: usize = 31;
 
     #[must_use]
     pub fn new(column_count: usize, with_cache: bool, global_parameters: GlobalParameters) -> Self {
@@ -273,8 +273,6 @@ pub mod test {
         encoder::{DaEncoder, DaEncoderParams},
         global::GLOBAL_PARAMETERS,
     };
-    use crate::common::ChunksMatrix;
-
     pub static DOMAIN_SIZE: usize = 16;
     pub static PARAMS: LazyLock<DaEncoderParams> =
         LazyLock::new(|| DaEncoderParams::default_with(DOMAIN_SIZE));
