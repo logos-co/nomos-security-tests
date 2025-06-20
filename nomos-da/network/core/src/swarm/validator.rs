@@ -32,6 +32,7 @@ use crate::{
                 monitor_event,
             },
             monitor::{DAConnectionMonitorSettings, MonitorEvent},
+            mutated_transport::{DynamicBitFlipMutator, MutatedQuicTransport},
             policy::DAConnectionPolicy,
         },
         BalancerStats, ConnectionBalancer, ConnectionMonitor, DAConnectionPolicySettings,
@@ -135,9 +136,15 @@ where
             Membership,
         >,
     > {
+        // Create mutators
+        let (packet_mutator, _control_rx) = DynamicBitFlipMutator::new(0, 0);
+
         SwarmBuilder::with_existing_identity(key)
             .with_tokio()
-            .with_quic()
+            .with_other_transport(|key| {
+                MutatedQuicTransport::new(libp2p::quic::Config::new(key), packet_mutator, None)
+            })
+            .unwrap()
             .with_behaviour(|key| {
                 ValidatorBehaviour::new(
                     key,

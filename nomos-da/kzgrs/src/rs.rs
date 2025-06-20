@@ -20,6 +20,8 @@ pub fn encode(
     Evaluations::from_vec_and_domain(domain.fft(&polynomial.coeffs), domain)
 }
 
+
+
 /// Interpolate points into a polynomial.
 ///
 /// Then evaluate the polynomial in the
