@@ -1,4 +1,4 @@
-use std::ops::{Add, Mul as _, Neg as _};
+use std::ops::{Mul as _, Neg as _};
 
 use ark_bls12_381::Fr;
 use ark_ff::{BigInteger as _, Field as _, PrimeField as _};
@@ -17,15 +17,10 @@ pub fn encode(
     polynomial: &DensePolynomial<Fr>,
     domain: GeneralEvaluationDomain<Fr>,
 ) -> Evaluations<Fr> {
-    let mut evaluations = Evaluations::from_vec_and_domain(domain.fft(&polynomial.coeffs), domain);
-
-    // Introduce manipulation: Modify the first evaluation point
-    if !evaluations.evals.is_empty() {
-        evaluations.evals[0] = evaluations.evals[0].add(Fr::from(1u64)); // Add 1 to the first point
-    }
-
-    evaluations
+    Evaluations::from_vec_and_domain(domain.fft(&polynomial.coeffs), domain)
 }
+
+
 
 /// Interpolate points into a polynomial.
 ///
