@@ -73,7 +73,7 @@ impl DispersalEvent {
 }
 
 type DispersalTask =
-BoxFuture<'static, Result<(PeerId, dispersal::DispersalRequest, Stream), DispersalError>>;
+    BoxFuture<'static, Result<(PeerId, dispersal::DispersalRequest, Stream), DispersalError>>;
 
 pub struct DispersalValidatorBehaviour<Membership> {
     stream_behaviour: libp2p_stream::Behaviour,
@@ -130,7 +130,7 @@ impl<Membership: MembershipHandler> DispersalValidatorBehaviour<Membership> {
 }
 
 impl<M: MembershipHandler<Id = PeerId, NetworkId = SubnetworkId> + 'static> NetworkBehaviour
-for DispersalValidatorBehaviour<M>
+    for DispersalValidatorBehaviour<M>
 {
     type ConnectionHandler = Either<
         <libp2p_stream::Behaviour as NetworkBehaviour>::ConnectionHandler,

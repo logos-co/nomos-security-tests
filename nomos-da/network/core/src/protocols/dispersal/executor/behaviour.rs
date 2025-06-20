@@ -295,11 +295,11 @@ where
         let response: dispersal::DispersalResponse = unpack_from_reader(&mut stream.stream)
             .await
             .map_err(|error| DispersalError::Io {
-                peer_id,
-                error,
-                blob_id,
-                subnetwork_id,
-            })?;
+            peer_id,
+            error,
+            blob_id,
+            subnetwork_id,
+        })?;
         // `blob_id` should always be a 32bytes hash
         Ok((blob_id, subnetwork_id, response, stream))
     }
@@ -343,7 +343,7 @@ where
 }
 
 impl<Membership: MembershipHandler<Id = PeerId, NetworkId = SubnetworkId> + 'static>
-DispersalExecutorBehaviour<Membership>
+    DispersalExecutorBehaviour<Membership>
 {
     /// Schedule a new task for sending the blob, if stream is not available
     /// queue messages for later processing.
@@ -418,7 +418,7 @@ DispersalExecutorBehaviour<Membership>
 }
 
 impl<M: MembershipHandler<Id = PeerId, NetworkId = SubnetworkId> + 'static> NetworkBehaviour
-for DispersalExecutorBehaviour<M>
+    for DispersalExecutorBehaviour<M>
 {
     type ConnectionHandler = Either<
         <libp2p_stream::Behaviour as NetworkBehaviour>::ConnectionHandler,
