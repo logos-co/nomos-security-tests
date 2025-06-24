@@ -5,7 +5,7 @@ A branch to serve as a repository with Nomos node modifications for E2E tests in
 ## Covered Modifications
 
 - [DA Message Transformer](https://github.com/logos-co/nomos-security-tests/pull/2/commits/b62dfc02d52b2bf9d50bbb211c6104d1d2b7c7ba)
-- [MAX_BLS12_381_ENCODING_CHUNK_SIZE to 30](https://github.com/logos-co/nomos-security-tests/pull/2/commits/25d781eaabe04603f2d97cd5e35c4e9c8ce0b714)
+- [MAX_BLS12_381_ENCODING_CHUNK_SIZE to 30](https://github.com/logos-co/nomos-security-tests/pull/3/commits/7f54114b6c320dc32577b0e8bb85c2d543b4bd56)
 - [Modify RS encode function](https://github.com/logos-co/nomos-security-tests/pull/2/commits/0a01ddb323d2b5f9600e26345c14d8fa1d7cbe40) 
 
 ## Build Requirements
